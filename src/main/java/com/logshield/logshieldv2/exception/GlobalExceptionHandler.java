@@ -1,10 +1,11 @@
 package com.logshield.logshieldv2.exception;
 
-import com.logshield.logshieldv2.model.ApiResponse;
+import com.logshield.logshieldv2.model.LogShieldResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * Centralized exception handler for all LogShield v2 controllers.
@@ -24,12 +25,12 @@ public class GlobalExceptionHandler {
      * Returns the HTTP status code embedded in the exception.
      */
     @ExceptionHandler(LogShieldException.class)
-    public ResponseEntity<ApiResponse<Void>> handleLogShieldException(
+    public ResponseEntity<LogShieldResponse<Void>> handleLogShieldException(
             LogShieldException ex) {
 
         return ResponseEntity
                 .status(ex.getHttpStatus())
-                .body(ApiResponse.error(ex.getMessage()));
+                .body(LogShieldResponse.error(ex.getMessage()));
     }
 
     /**
@@ -38,12 +39,25 @@ public class GlobalExceptionHandler {
      * Never exposes internal stack traces to the client.
      */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleGenericException(
-            Exception ex) {
+    public ResponseEntity<LogShieldResponse<Void>> handleGenericException(
+            Exception ex,
+            jakarta.servlet.http.HttpServletRequest request) {
+
+        String path = request.getRequestURI();
+
+        // Let Spring handle Springdoc internal errors — do not intercept
+        if (path.contains("/v3/api-docs") || path.contains("/swagger")) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(LogShieldResponse.error(
+                            "Springdoc error: " + ex.getMessage()));
+        }
+
+        ex.printStackTrace();
 
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error(
+                .body(LogShieldResponse.error(
                         "An unexpected error occurred. Please try again."));
     }
 }

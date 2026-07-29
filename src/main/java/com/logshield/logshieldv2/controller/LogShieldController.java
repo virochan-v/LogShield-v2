@@ -1,6 +1,6 @@
 package com.logshield.logshieldv2.controller;
 
-import com.logshield.logshieldv2.model.ApiResponse;
+import com.logshield.logshieldv2.model.LogShieldResponse;
 import com.logshield.logshieldv2.model.LogEntryRequest;
 import com.logshield.logshieldv2.model.LogEntryResponse;
 import com.logshield.logshieldv2.service.ILogShieldService;
@@ -54,13 +54,13 @@ public class LogShieldController {
      * Returns 400 Bad Request if level is invalid or fields are blank.
      */
     @PostMapping
-    public ResponseEntity<ApiResponse<LogEntryResponse>> addLog(
+    public ResponseEntity<LogShieldResponse<LogEntryResponse>> addLog(
             @RequestBody LogEntryRequest request) {
 
         LogEntryResponse entry = service.addLog(request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Log entry added successfully.", entry));
+                .body(LogShieldResponse.success("Log entry added successfully.", entry));
     }
 
     // ── READ ──────────────────────────────────────────────────────────────
@@ -71,11 +71,11 @@ public class LogShieldController {
      * Returns 200 OK with list of all entries.
      */
     @GetMapping
-    public ResponseEntity<ApiResponse<List<LogEntryResponse>>> getAllLogs() {
+    public ResponseEntity<LogShieldResponse<List<LogEntryResponse>>> getAllLogs() {
 
         List<LogEntryResponse> logs = service.getAllLogs();
         return ResponseEntity.ok(
-                ApiResponse.success(
+                LogShieldResponse.success(
                         logs.size() + " log entries retrieved.", logs));
     }
 
@@ -85,11 +85,11 @@ public class LogShieldController {
      * Uses Cycle Sort — O(n²) time, O(1) space, minimum memory writes.
      */
     @GetMapping("/sorted")
-    public ResponseEntity<ApiResponse<List<LogEntryResponse>>> getSortedLogs() {
+    public ResponseEntity<LogShieldResponse<List<LogEntryResponse>>> getSortedLogs() {
 
         List<LogEntryResponse> sorted = service.getSortedLogs();
         return ResponseEntity.ok(
-                ApiResponse.success(
+                LogShieldResponse.success(
                         "Logs sorted by severity (Cycle Sort — O(n²)).",
                         sorted));
     }
@@ -103,12 +103,12 @@ public class LogShieldController {
      * score = 1 (INFO), 2 (WARN), 3 (ERROR)
      */
     @GetMapping("/search/{score}")
-    public ResponseEntity<ApiResponse<List<LogEntryResponse>>> searchBySeverity(
+    public ResponseEntity<LogShieldResponse<List<LogEntryResponse>>> searchBySeverity(
             @PathVariable int score) {
 
         List<LogEntryResponse> results = service.searchBySeverity(score);
         return ResponseEntity.ok(
-                ApiResponse.success(
+                LogShieldResponse.success(
                         results.size() + " log(s) found with severity "
                                 + score + " — O(log n + d).",
                         results));
@@ -120,12 +120,12 @@ public class LogShieldController {
      * Space complexity O(k) regardless of total entries.
      */
     @GetMapping("/top/{k}")
-    public ResponseEntity<ApiResponse<List<LogEntryResponse>>> getTopAnomalies(
+    public ResponseEntity<LogShieldResponse<List<LogEntryResponse>>> getTopAnomalies(
             @PathVariable int k) {
 
         List<LogEntryResponse> top = service.getTopAnomalies(k);
         return ResponseEntity.ok(
-                ApiResponse.success(
+                LogShieldResponse.success(
                         "Top " + k + " anomalies retrieved (MinHeap — O(n log k)).",
                         top));
     }
@@ -135,7 +135,7 @@ public class LogShieldController {
      * Search exact pattern frequency in log messages.
      */
     @GetMapping("/pattern")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getPatternFrequency(
+    public ResponseEntity<LogShieldResponse<Map<String, Object>>> getPatternFrequency(
             @RequestParam String query) {
 
         int freq = service.getPatternFrequency(query);
@@ -145,7 +145,7 @@ public class LogShieldController {
                 "found",     freq > 0
         );
         return ResponseEntity.ok(
-                ApiResponse.success("Pattern search complete.", result));
+                LogShieldResponse.success("Pattern search complete.", result));
     }
 
     /**
@@ -154,12 +154,12 @@ public class LogShieldController {
      * Returns all matching message strings.
      */
     @GetMapping("/prefix")
-    public ResponseEntity<ApiResponse<List<String>>> searchByPrefix(
+    public ResponseEntity<LogShieldResponse<List<String>>> searchByPrefix(
             @RequestParam String query) {
 
         List<String> matches = service.searchByPrefix(query);
         return ResponseEntity.ok(
-                ApiResponse.success(
+                LogShieldResponse.success(
                         matches.size() + " message(s) starting with '"
                                 + query + "'.",
                         matches));
@@ -171,11 +171,11 @@ public class LogShieldController {
      * Single O(n) pass — three counters only.
      */
     @GetMapping("/statistics")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getStatistics() {
+    public ResponseEntity<LogShieldResponse<Map<String, Object>>> getStatistics() {
 
         Map<String, Object> stats = service.getStatistics();
         return ResponseEntity.ok(
-                ApiResponse.success("Statistics retrieved.", stats));
+                LogShieldResponse.success("Statistics retrieved.", stats));
     }
 
     /**
@@ -184,14 +184,14 @@ public class LogShieldController {
      * ISO format timestamps sort lexicographically = chronologically.
      */
     @GetMapping("/range")
-    public ResponseEntity<ApiResponse<List<LogEntryResponse>>> filterByTimeRange(
+    public ResponseEntity<LogShieldResponse<List<LogEntryResponse>>> filterByTimeRange(
             @RequestParam String start,
             @RequestParam String end) {
 
         List<LogEntryResponse> results =
                 service.filterByTimeRange(start, end);
         return ResponseEntity.ok(
-                ApiResponse.success(
+                LogShieldResponse.success(
                         results.size() + " log(s) in range "
                                 + start + " → " + end + ".",
                         results));
@@ -203,14 +203,14 @@ public class LogShieldController {
      * O(n) detection after O(n log n) timestamp sort.
      */
     @GetMapping("/anomalies")
-    public ResponseEntity<ApiResponse<List<String>>> getAnomalySummary(
+    public ResponseEntity<LogShieldResponse<List<String>>> getAnomalySummary(
             @RequestParam(defaultValue = "5")  int windowSize,
             @RequestParam(defaultValue = "3")  int errorThreshold) {
 
         List<String> summary =
                 service.getAnomalySummary(windowSize, errorThreshold);
         return ResponseEntity.ok(
-                ApiResponse.success(
+                LogShieldResponse.success(
                         summary.isEmpty()
                                 ? "No anomaly bursts detected. System stable."
                                 : summary.size() + " anomaly period(s) detected.",
@@ -225,12 +225,12 @@ public class LogShieldController {
      * Throws LogNotFoundException if timestamp does not exist.
      */
     @DeleteMapping("/{timestamp}")
-    public ResponseEntity<ApiResponse<Void>> deleteLog(
+    public ResponseEntity<LogShieldResponse<Void>> deleteLog(
             @PathVariable String timestamp) {
 
         service.deleteLog(timestamp);
         return ResponseEntity.ok(
-                ApiResponse.success(
+                LogShieldResponse.success(
                         "Log entry deleted: '" + timestamp + "'", null));
     }
 
@@ -240,10 +240,10 @@ public class LogShieldController {
      * Returns 200 OK with confirmation.
      */
     @DeleteMapping
-    public ResponseEntity<ApiResponse<Void>> clearAllLogs() {
+    public ResponseEntity<LogShieldResponse<Void>> clearAllLogs() {
 
         service.clearAllLogs();
         return ResponseEntity.ok(
-                ApiResponse.success("All log entries cleared.", null));
+                LogShieldResponse.success("All log entries cleared.", null));
     }
 }
