@@ -4,7 +4,7 @@ import com.logshield.logshieldv2.model.LogShieldResponse;
 import com.logshield.logshieldv2.model.LogEntryRequest;
 import com.logshield.logshieldv2.model.LogEntryResponse;
 import com.logshield.logshieldv2.service.ILogShieldService;
-import org.springframework.http.HttpStatus;
+import jakarta.validation.Valid;import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -55,7 +55,7 @@ public class LogShieldController {
      */
     @PostMapping
     public ResponseEntity<LogShieldResponse<LogEntryResponse>> addLog(
-            @RequestBody LogEntryRequest request) {
+            @RequestBody @Valid LogEntryRequest request) {
 
         LogEntryResponse entry = service.addLog(request);
         return ResponseEntity

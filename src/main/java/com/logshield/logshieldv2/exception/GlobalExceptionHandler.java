@@ -3,9 +3,9 @@ package com.logshield.logshieldv2.exception;
 import com.logshield.logshieldv2.model.LogShieldResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.MethodArgumentNotValidException;import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;import java.util.stream.Collectors;
 
 /**
  * Centralized exception handler for all LogShield v2 controllers.
@@ -31,6 +31,28 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ex.getHttpStatus())
                 .body(LogShieldResponse.error(ex.getMessage()));
+    }
+
+    /**
+     * Handles Bean Validation failures — @NotBlank, @Pattern, @Size violations.
+     * Collects all field errors into one readable message.
+     * Returns HTTP 400 Bad Request.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<LogShieldResponse<Void>>
+    handleValidationException(MethodArgumentNotValidException ex) {
+
+        // Collect all field error messages into one string
+        String errors = ex.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .collect(Collectors.joining(", "));
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(LogShieldResponse.error(
+                        "Validation failed: " + errors));
     }
 
     /**

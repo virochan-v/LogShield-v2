@@ -81,16 +81,6 @@ public class LogShieldServiceImpl implements ILogShieldService {
     @Override
     public LogEntryResponse addLog(LogEntryRequest request) {
 
-        // Validate inputs
-        if (request.getTimestamp() == null
-                || request.getTimestamp().trim().isEmpty()) {
-            throw new InvalidLogLevelException("Timestamp cannot be blank");
-        }
-        if (request.getMessage() == null
-                || request.getMessage().trim().isEmpty()) {
-            throw new InvalidLogLevelException("Message cannot be blank");
-        }
-
         // Resolve severity — throws if level is invalid
         String level = request.getLevel().toUpperCase().trim();
         int severityScore = resolveSeverity(level);
