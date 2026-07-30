@@ -4,6 +4,7 @@ import com.logshield.logshieldv2.exception.InvalidLogLevelException;
 import com.logshield.logshieldv2.exception.LogNotFoundException;
 import com.logshield.logshieldv2.model.LogEntryRequest;
 import com.logshield.logshieldv2.model.LogEntryResponse;
+import com.logshield.logshieldv2.model.PagedResponse;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -118,6 +119,48 @@ public class LogShieldServiceImpl implements ILogShieldService {
      * Time Complexity: O(n²) — Cycle Sort
      * Space Complexity: O(1) extra — in-place sort
      */
+
+    /**
+     * Returns a paginated subset of log entries.
+     *
+     * Retrieves all entries, then applies offset and limit.
+     * For large datasets a database with SQL LIMIT/OFFSET would be used —
+     * this in-memory implementation demonstrates the pagination contract.
+     *
+     * Time Complexity : O(n) — full collection scan then subList
+     * Space Complexity: O(size) — only one page held in response
+     *
+     * @param page zero-based page number
+     * @param size number of entries per page
+     * @return PagedResponse containing the requested page and metadata
+     */
+    @Override
+    public PagedResponse<LogEntryResponse> getPagedLogs(int page, int size) {
+
+        // Guard: enforce sensible defaults
+        if (page < 0)  page = 0;
+        if (size <= 0) size = 20;
+        if (size > 100) size = 100; // cap at 100 — prevent abuse
+
+        List<LogEntryResponse> all = new ArrayList<>(logCache.values());
+        long totalElements = all.size();
+
+        // Calculate start and end index for this page
+        int fromIndex = page * size;
+        int toIndex   = (int) Math.min(fromIndex + size, totalElements);
+
+        // Handle page beyond available data
+        if (fromIndex >= totalElements) {
+            return new PagedResponse<>(
+                    new ArrayList<>(), page, size, totalElements);
+        }
+
+        // Extract the page slice
+        List<LogEntryResponse> pageContent = all.subList(fromIndex, toIndex);
+
+        return new PagedResponse<>(pageContent, page, size, totalElements);
+    }
+
     @Override
     public List<LogEntryResponse> getSortedLogs() {
         LogEntryResponse[] arr = getCacheAsArray();

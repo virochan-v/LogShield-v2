@@ -3,6 +3,7 @@ package com.logshield.logshieldv2.controller;
 import com.logshield.logshieldv2.model.LogShieldResponse;
 import com.logshield.logshieldv2.model.LogEntryRequest;
 import com.logshield.logshieldv2.model.LogEntryResponse;
+import com.logshield.logshieldv2.model.PagedResponse;
 import com.logshield.logshieldv2.service.ILogShieldService;
 import jakarta.validation.Valid;import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -77,6 +78,33 @@ public class LogShieldController {
         return ResponseEntity.ok(
                 LogShieldResponse.success(
                         logs.size() + " log entries retrieved.", logs));
+    }
+
+    /**
+     * GET /api/v1/logs/paged?page=0&size=20
+     * Returns a paginated subset of log entries.
+     *
+     * Query parameters:
+     * page — zero-based page number (default 0)
+     * size — items per page (default 20, max 100)
+     *
+     * Returns metadata: totalElements, totalPages, first, last flags.
+     */
+    @GetMapping("/paged")
+    public ResponseEntity<LogShieldResponse<PagedResponse<LogEntryResponse>>>
+    getPagedLogs(
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        PagedResponse<LogEntryResponse> result =
+                service.getPagedLogs(page, size);
+
+        return ResponseEntity.ok(
+                LogShieldResponse.success(
+                        "Page " + page + " of " + result.getTotalPages()
+                                + " (" + result.getTotalElements()
+                                + " total entries).",
+                        result));
     }
 
     /**

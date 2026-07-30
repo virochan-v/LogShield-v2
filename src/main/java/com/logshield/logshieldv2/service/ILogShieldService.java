@@ -2,6 +2,7 @@ package com.logshield.logshieldv2.service;
 
 import com.logshield.logshieldv2.model.LogEntryRequest;
 import com.logshield.logshieldv2.model.LogEntryResponse;
+import com.logshield.logshieldv2.model.PagedResponse;
 
 import java.util.List;
 import java.util.Map;
@@ -56,4 +57,7 @@ public interface ILogShieldService {
 
     // Export logs to file
     void exportLogs(String filePath);
+
+    // Get paginated logs — page is zero-based, size is items per page
+    PagedResponse<LogEntryResponse> getPagedLogs(int page, int size);
 }

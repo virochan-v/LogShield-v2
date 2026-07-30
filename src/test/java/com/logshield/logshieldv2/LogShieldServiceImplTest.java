@@ -3,6 +3,7 @@ package com.logshield.logshieldv2;
 import com.logshield.logshieldv2.exception.InvalidLogLevelException;
 import com.logshield.logshieldv2.model.LogEntryRequest;
 import com.logshield.logshieldv2.model.LogEntryResponse;
+import com.logshield.logshieldv2.model.PagedResponse;
 import com.logshield.logshieldv2.service.LogShieldServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -316,5 +317,35 @@ class LogShieldServiceImplTest {
         List<String> summary = service.getAnomalySummary(3, 3);
 
         assertTrue(summary.isEmpty());
+    }
+    // ── getPagedLogs() tests ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("getPagedLogs: returns correct page slice and metadata")
+    void getPagedLogs_page0Size2_returnsFirstTwoEntries() {
+        service.addLog(request("2024-06-01 09:00:00", "ERROR", "One"));
+        service.addLog(request("2024-06-01 09:01:00", "WARN",  "Two"));
+        service.addLog(request("2024-06-01 09:02:00", "INFO",  "Three"));
+
+        PagedResponse<LogEntryResponse> result =
+                service.getPagedLogs(0, 2);
+
+        assertEquals(2,  result.getContent().size());
+        assertEquals(3,  result.getTotalElements());
+        assertEquals(2,  result.getTotalPages());
+        assertTrue(result.isFirst());
+        assertFalse(result.isLast());
+    }
+
+    @Test
+    @DisplayName("getPagedLogs: page beyond data returns empty content")
+    void getPagedLogs_pageBeyondData_returnsEmptyContent() {
+        service.addLog(request("2024-06-01 09:00:00", "INFO", "Only one"));
+
+        PagedResponse<LogEntryResponse> result =
+                service.getPagedLogs(99, 20);
+
+        assertTrue(result.getContent().isEmpty());
+        assertEquals(1, result.getTotalElements());
     }
 }
