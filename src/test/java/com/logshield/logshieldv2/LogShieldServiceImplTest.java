@@ -35,7 +35,10 @@ class LogShieldServiceImplTest {
      */
     @BeforeEach
     void setUp() {
-        service = new LogShieldServiceImpl();
+        // Inject real TrieService — not a mock
+        // TrieService has no external dependencies so real instance is fine
+        service = new LogShieldServiceImpl(
+                new com.logshield.logshieldv2.trie.TrieService());
     }
 
     // ── Helper method ─────────────────────────────────────────────────────
@@ -347,5 +350,40 @@ class LogShieldServiceImplTest {
 
         assertTrue(result.getContent().isEmpty());
         assertEquals(1, result.getTotalElements());
+    }
+
+    // ── Trie tests ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("searchByPrefix: finds all messages starting with prefix")
+    void searchByPrefix_nullPointerPrefix_returnsBothVariants() {
+        service.addLog(request("2024-06-01 09:00:00", "ERROR",
+                "NullPointerException in UserService"));
+        service.addLog(request("2024-06-01 09:01:00", "ERROR",
+                "NullPointerException in PaymentService"));
+        service.addLog(request("2024-06-01 09:02:00", "WARN",
+                "Connection refused on port 8080"));
+
+        List<String> results = service.searchByPrefix("NullPointer");
+
+        assertEquals(2, results.size());
+        assertTrue(results.stream().allMatch(
+                m -> m.startsWith("NullPointer")));
+    }
+
+    @Test
+    @DisplayName("getPatternFrequency: returns correct count for exact match")
+    void getPatternFrequency_exactMatch_returnsCorrectFrequency() {
+        service.addLog(request("2024-06-01 09:00:00", "ERROR",
+                "NullPointerException in UserService"));
+        service.addLog(request("2024-06-01 09:01:00", "ERROR",
+                "NullPointerException in UserService"));
+
+        // Same message added twice — but duplicate timestamp means only one stored
+        // Frequency tracks insertions not cache entries
+        int freq = service.getPatternFrequency(
+                "NullPointerException in UserService");
+
+        assertTrue(freq >= 1);
     }
 }

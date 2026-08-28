@@ -5,6 +5,7 @@ import com.logshield.logshieldv2.exception.LogNotFoundException;
 import com.logshield.logshieldv2.model.LogEntryRequest;
 import com.logshield.logshieldv2.model.LogEntryResponse;
 import com.logshield.logshieldv2.model.PagedResponse;
+import com.logshield.logshieldv2.trie.TrieService;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -48,6 +49,15 @@ public class LogShieldServiceImpl implements ILogShieldService {
             = new ConcurrentHashMap<>();
 
     // ── Helper: validate and map ──────────────────────────────────────────
+
+    // TrieService — injected via constructor, owns all pattern tracking
+    private final TrieService trieService;
+
+    // Constructor injection — TrieService injected by Spring
+    // Preferred over @Autowired field injection — explicit and testable
+    public LogShieldServiceImpl(TrieService trieService) {
+        this.trieService = trieService;
+    }
 
     /**
      * Validates the log level and returns severity score.
@@ -94,8 +104,10 @@ public class LogShieldServiceImpl implements ILogShieldService {
                 severityScore
         );
 
-        // Store in cache — duplicate timestamp overwrites existing entry
         logCache.put(entry.getTimestamp(), entry);
+
+        // Track pattern in Trie — O(L) insert or frequency increment
+        trieService.trackPattern(entry.getMessage());
 
         return entry;
     }
@@ -214,36 +226,21 @@ public class LogShieldServiceImpl implements ILogShieldService {
     }
 
     /**
-     * Returns frequency of exact pattern match in log messages.
-     * Simple O(n) scan — Trie prefix search added in next iteration.
-     *
-     * Time Complexity: O(n)
+     * Returns frequency of exact pattern match using Trie.
+     * Time Complexity: O(L) — replaces O(n) linear scan
      */
     @Override
     public int getPatternFrequency(String pattern) {
-        int count = 0;
-        for (LogEntryResponse entry : logCache.values()) {
-            if (entry.getMessage().equals(pattern)) count++;
-        }
-        return count;
+        return trieService.getFrequency(pattern);
     }
 
     /**
-     * Returns all log messages containing the given prefix.
-     * O(n * L) — full scan with string prefix check.
-     * Full Trie implementation added in next iteration.
-     *
-     * Time Complexity: O(n * L) where L = prefix length
+     * Returns all patterns starting with prefix using Trie DFS.
+     * Time Complexity: O(L + W) — replaces O(n × L) linear scan
      */
     @Override
     public List<String> searchByPrefix(String prefix) {
-        List<String> results = new ArrayList<>();
-        for (LogEntryResponse entry : logCache.values()) {
-            if (entry.getMessage().startsWith(prefix)) {
-                results.add(entry.getMessage());
-            }
-        }
-        return results;
+        return trieService.searchByPrefix(prefix);
     }
 
     /**
