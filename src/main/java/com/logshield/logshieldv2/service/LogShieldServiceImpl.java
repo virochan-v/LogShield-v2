@@ -6,6 +6,8 @@ import com.logshield.logshieldv2.model.LogEntryRequest;
 import com.logshield.logshieldv2.model.LogEntryResponse;
 import com.logshield.logshieldv2.model.PagedResponse;
 import com.logshield.logshieldv2.trie.TrieService;
+import com.logshield.logshieldv2.storage.FileHandler;
+import com.logshield.logshieldv2.trie.TrieService;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -53,10 +55,15 @@ public class LogShieldServiceImpl implements ILogShieldService {
     // TrieService — injected via constructor, owns all pattern tracking
     private final TrieService trieService;
 
+    // FileHandler — injected via constructor, owns all disk I/O
+    private final FileHandler fileHandler;
+
     // Constructor injection — TrieService injected by Spring
     // Preferred over @Autowired field injection — explicit and testable
-    public LogShieldServiceImpl(TrieService trieService) {
+    public LogShieldServiceImpl(TrieService trieService,
+                                FileHandler fileHandler) {
         this.trieService = trieService;
+        this.fileHandler = fileHandler;
     }
 
     /**
@@ -104,6 +111,11 @@ public class LogShieldServiceImpl implements ILogShieldService {
                 severityScore
         );
 
+        // Write to disk FIRST — Write-Through policy
+        // If JVM crashes after this line, entry survives on disk
+        fileHandler.appendLog(entry);
+
+        // Mirror into in-memory cache
         logCache.put(entry.getTimestamp(), entry);
 
         // Track pattern in Trie — O(L) insert or frequency increment
@@ -357,6 +369,11 @@ public class LogShieldServiceImpl implements ILogShieldService {
             throw new LogNotFoundException(timestamp);
         }
         logCache.remove(timestamp);
+
+        // Rewrite file without deleted entry — flat file has no random-access delete
+        // O(n) rewrite — acceptable trade-off for this scale
+        fileHandler.rewriteAll(new ArrayList<>(logCache.values()));
+
         return true;
     }
 
@@ -367,6 +384,8 @@ public class LogShieldServiceImpl implements ILogShieldService {
     @Override
     public void clearAllLogs() {
         logCache.clear();
+        trieService.reset();
+        fileHandler.clearFile();
     }
 
     /**
@@ -375,8 +394,9 @@ public class LogShieldServiceImpl implements ILogShieldService {
      */
     @Override
     public void exportLogs(String filePath) {
-        // Phase 2 — file export via FileHandler
-        // For now logs live in-memory for the REST API lifecycle
+        // Batch write — one file open for all entries
+        // More efficient than appendLog() per entry
+        fileHandler.rewriteAll(new ArrayList<>(logCache.values()), filePath);
     }
 
     // ── Algorithm implementations ─────────────────────────────────────────
@@ -502,5 +522,20 @@ public class LogShieldServiceImpl implements ILogShieldService {
             }
         }
         return summaries;
+    }
+    /**
+     * Exposes the internal cache for startup restoration only.
+     * Never use this in business logic — violates encapsulation.
+     * Package-private access intentional.
+     */
+    public Map<String, LogEntryResponse> getCache() {
+        return logCache;
+    }
+
+    /**
+     * Exposes TrieService for startup pattern restoration only.
+     */
+    public TrieService getTrieService() {
+        return trieService;
     }
 }

@@ -35,10 +35,9 @@ class LogShieldServiceImplTest {
      */
     @BeforeEach
     void setUp() {
-        // Inject real TrieService — not a mock
-        // TrieService has no external dependencies so real instance is fine
         service = new LogShieldServiceImpl(
-                new com.logshield.logshieldv2.trie.TrieService());
+                new com.logshield.logshieldv2.trie.TrieService(),
+                new com.logshield.logshieldv2.storage.FileHandler());
     }
 
     // ── Helper method ─────────────────────────────────────────────────────
