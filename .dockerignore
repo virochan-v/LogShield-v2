@@ -1,0 +1,18 @@
+# Compiled output — Docker builds from source
+target/
+
+# IntelliJ files
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Runtime data — not part of the image
+data/
+exports/
