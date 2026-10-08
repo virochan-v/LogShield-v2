@@ -60,4 +60,7 @@ public interface ILogShieldService {
 
     // Get paginated logs — page is zero-based, size is items per page
     PagedResponse<LogEntryResponse> getPagedLogs(int page, int size);
+
+    // Sort logs using TimSort — O(n log n) time, production choice for large n
+    List<LogEntryResponse> getSortedLogsFast();
 }

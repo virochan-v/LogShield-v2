@@ -193,6 +193,29 @@ public class LogShieldServiceImpl implements ILogShieldService {
     }
 
     /**
+     * Sorts log entries using Collections.sort() — TimSort algorithm.
+     *
+     * Production choice for large datasets where O(n log n) time
+     * matters more than minimizing memory writes.
+     *
+     * Compare with getSortedLogs() which uses Cycle Sort O(n²) —
+     * chosen for minimum writes on write-limited storage.
+     *
+     * Time Complexity : O(n log n) — TimSort
+     * Space Complexity: O(n) — TimSort requires auxiliary space
+     */
+    @Override
+    public List<LogEntryResponse> getSortedLogsFast() {
+        List<LogEntryResponse> all = new ArrayList<>(logCache.values());
+
+        // Collections.sort() uses TimSort — O(n log n) stable sort
+        // Stable = entries with equal severity maintain insertion order
+        all.sort(Comparator.comparingInt(LogEntryResponse::getSeverityScore));
+
+        return all;
+    }
+
+    /**
      * Searches all log entries matching the given severity score.
      * Uses Binary Search after sorting — O(log n + d).
      *

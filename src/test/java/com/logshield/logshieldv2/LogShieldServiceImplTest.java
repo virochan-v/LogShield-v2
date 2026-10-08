@@ -164,6 +164,21 @@ class LogShieldServiceImplTest {
         assertTrue(service.getSortedLogs().isEmpty());
     }
 
+    @Test
+    @DisplayName("getSortedLogsFast: returns entries in ascending severity order using TimSort")
+    void getSortedLogsFast_mixedEntries_returnsAscendingOrder() {
+        service.addLog(request("2024-06-01 09:00:00", "ERROR", "Error one"));
+        service.addLog(request("2024-06-01 09:01:00", "INFO",  "Info one"));
+        service.addLog(request("2024-06-01 09:02:00", "WARN",  "Warn one"));
+
+        List<LogEntryResponse> sorted = service.getSortedLogsFast();
+
+        assertEquals(3, sorted.size());
+        assertEquals(1, sorted.get(0).getSeverityScore());
+        assertEquals(2, sorted.get(1).getSeverityScore());
+        assertEquals(3, sorted.get(2).getSeverityScore());
+    }
+
     // ── searchBySeverity() tests ──────────────────────────────────────────
 
     @Test

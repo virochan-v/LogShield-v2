@@ -123,6 +123,24 @@ public class LogShieldController {
     }
 
     /**
+     * GET /api/v1/logs/sorted-fast
+     * Sort logs using TimSort — O(n log n), production choice for large n.
+     *
+     * Compare with /sorted which uses Cycle Sort O(n²) — chosen for
+     * minimum memory writes on write-limited storage at small scale.
+     */
+    @GetMapping("/sorted-fast")
+    public ResponseEntity<LogShieldResponse<List<LogEntryResponse>>>
+    getSortedLogsFast() {
+
+        List<LogEntryResponse> sorted = service.getSortedLogsFast();
+        return ResponseEntity.ok(
+                LogShieldResponse.success(
+                        "Logs sorted by severity (TimSort — O(n log n)).",
+                        sorted));
+    }
+
+    /**
      * GET /api/v1/logs/search/{score}
      * Search all log entries matching the given severity score.
      * Uses Binary Search + expand — O(log n + d).
