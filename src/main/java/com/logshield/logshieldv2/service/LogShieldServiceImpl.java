@@ -1,5 +1,7 @@
 package com.logshield.logshieldv2.service;
 
+import com.logshield.logshieldv2.entity.LogEntryEntity;
+import com.logshield.logshieldv2.entity.LogEntryRepository;
 import com.logshield.logshieldv2.exception.InvalidLogLevelException;
 import com.logshield.logshieldv2.exception.LogNotFoundException;
 import com.logshield.logshieldv2.model.LogEntryRequest;
@@ -58,12 +60,17 @@ public class LogShieldServiceImpl implements ILogShieldService {
     // FileHandler — injected via constructor, owns all disk I/O
     private final FileHandler fileHandler;
 
+    // JPA repository — Spring-managed, handles all DB operations
+    private final LogEntryRepository repository;
+
     // Constructor injection — TrieService injected by Spring
     // Preferred over @Autowired field injection — explicit and testable
     public LogShieldServiceImpl(TrieService trieService,
-                                FileHandler fileHandler) {
+                                FileHandler fileHandler,
+                                LogEntryRepository repository) {
         this.trieService = trieService;
         this.fileHandler = fileHandler;
+        this.repository  = repository;
     }
 
     /**
@@ -99,29 +106,38 @@ public class LogShieldServiceImpl implements ILogShieldService {
     @Override
     public LogEntryResponse addLog(LogEntryRequest request) {
 
+        // Validate inputs
+        if (request.getTimestamp() == null
+                || request.getTimestamp().trim().isEmpty()) {
+            throw new InvalidLogLevelException("Timestamp cannot be blank");
+        }
+        if (request.getMessage() == null
+                || request.getMessage().trim().isEmpty()) {
+            throw new InvalidLogLevelException("Message cannot be blank");
+        }
+
         // Resolve severity — throws if level is invalid
         String level = request.getLevel().toUpperCase().trim();
         int severityScore = resolveSeverity(level);
 
-        // Build response object — this is what gets stored and returned
-        LogEntryResponse entry = new LogEntryResponse(
+        // Build entity — JPA generates UUID on save
+        LogEntryEntity entity = new LogEntryEntity(
                 request.getTimestamp().trim(),
                 level,
                 request.getMessage().trim(),
                 severityScore
         );
 
-        // Write to disk FIRST — Write-Through policy
-        // If JVM crashes after this line, entry survives on disk
-        fileHandler.appendLog(entry);
+        // Save to DB — Write-Through: disk before cache
+        LogEntryEntity saved = repository.save(entity);
 
-        // Mirror into in-memory cache
-        logCache.put(entry.getTimestamp(), entry);
+        // Track pattern in Trie — O(L)
+        trieService.trackPattern(saved.getMessage());
 
-        // Track pattern in Trie — O(L) insert or frequency increment
-        trieService.trackPattern(entry.getMessage());
+        // Keep in-memory cache in sync for algorithm operations
+        logCache.put(saved.getId().toString(), toResponse(saved));
 
-        return entry;
+        return toResponse(saved);
     }
 
     /**
@@ -133,9 +149,11 @@ public class LogShieldServiceImpl implements ILogShieldService {
      */
     @Override
     public List<LogEntryResponse> getAllLogs() {
-        return new ArrayList<>(logCache.values());
+        return repository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .collect(java.util.stream.Collectors.toList());
     }
-
     /**
      * Sorts log entries by severity score using Cycle Sort.
      * Returns sorted list — ascending severity (INFO → WARN → ERROR).
@@ -287,16 +305,10 @@ public class LogShieldServiceImpl implements ILogShieldService {
      */
     @Override
     public Map<String, Object> getStatistics() {
-        int total = 0, info = 0, warn = 0, error = 0;
-
-        for (LogEntryResponse entry : logCache.values()) {
-            total++;
-            switch (entry.getLevel()) {
-                case "INFO":  info++;  break;
-                case "WARN":  warn++;  break;
-                case "ERROR": error++; break;
-            }
-        }
+        long total = repository.count();
+        long info  = repository.countByLevel("INFO");
+        long warn  = repository.countByLevel("WARN");
+        long error = repository.countByLevel("ERROR");
 
         double errorPercent = total > 0 ? (error * 100.0) / total : 0;
         String health = errorPercent == 0 ? "HEALTHY"
@@ -325,19 +337,10 @@ public class LogShieldServiceImpl implements ILogShieldService {
     public List<LogEntryResponse> filterByTimeRange(
             String start, String end) {
 
-        LogEntryResponse[] arr = getCacheAsArray();
-
-        // Sort by timestamp string — lexicographic = chronological for ISO
-        Arrays.sort(arr, Comparator.comparing(LogEntryResponse::getTimestamp));
-
-        List<LogEntryResponse> results = new ArrayList<>();
-        for (LogEntryResponse entry : arr) {
-            String ts = entry.getTimestamp();
-            if (ts.compareTo(start) >= 0 && ts.compareTo(end) <= 0) {
-                results.add(entry);
-            }
-        }
-        return results;
+        return repository.findByTimestampRange(start, end)
+                .stream()
+                .map(this::toResponse)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     /**
@@ -387,17 +390,19 @@ public class LogShieldServiceImpl implements ILogShieldService {
      * Time Complexity: O(1) — ConcurrentHashMap.remove()
      */
     @Override
-    public boolean deleteLog(String timestamp) {
-        if (!logCache.containsKey(timestamp)) {
-            throw new LogNotFoundException(timestamp);
+    public boolean deleteLog(String id) {
+        try {
+            UUID uuid = UUID.fromString(id);
+            if (!repository.existsById(uuid)) {
+                throw new LogNotFoundException(id);
+            }
+            repository.deleteById(uuid);
+            // Remove from in-memory cache too
+            logCache.remove(id);
+            return true;
+        } catch (IllegalArgumentException e) {
+            throw new LogNotFoundException(id);
         }
-        logCache.remove(timestamp);
-
-        // Rewrite file without deleted entry — flat file has no random-access delete
-        // O(n) rewrite — acceptable trade-off for this scale
-        fileHandler.rewriteAll(new ArrayList<>(logCache.values()));
-
-        return true;
     }
 
     /**
@@ -406,6 +411,7 @@ public class LogShieldServiceImpl implements ILogShieldService {
      */
     @Override
     public void clearAllLogs() {
+        repository.deleteAll();
         logCache.clear();
         trieService.reset();
         fileHandler.clearFile();
@@ -420,6 +426,25 @@ public class LogShieldServiceImpl implements ILogShieldService {
         // Batch write — one file open for all entries
         // More efficient than appendLog() per entry
         fileHandler.rewriteAll(new ArrayList<>(logCache.values()), filePath);
+    }
+
+    /**
+     * Converts a LogEntryEntity (DB representation) to
+     * LogEntryResponse (API representation).
+     *
+     * Service layer owns this conversion — controller and client
+     * never see JPA entities directly.
+     *
+     * Time Complexity: O(1) — field copy only
+     */
+    private LogEntryResponse toResponse(LogEntryEntity entity) {
+        return new LogEntryResponse(
+                entity.getId().toString(),  // UUID as String for API
+                entity.getTimestamp(),
+                entity.getLevel(),
+                entity.getMessage(),
+                entity.getSeverityScore()
+        );
     }
 
     // ── Algorithm implementations ─────────────────────────────────────────

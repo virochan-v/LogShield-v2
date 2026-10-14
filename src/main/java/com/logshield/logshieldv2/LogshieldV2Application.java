@@ -1,17 +1,13 @@
 package com.logshield.logshieldv2;
 
+import com.logshield.logshieldv2.entity.LogEntryRepository;
 import com.logshield.logshieldv2.model.LogEntryResponse;
 import com.logshield.logshieldv2.service.LogShieldServiceImpl;
-import com.logshield.logshieldv2.storage.FileHandler;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * LogShield v2 Spring Boot entry point.
@@ -38,31 +34,33 @@ public class LogshieldV2Application {
 	 */
 	@Bean
 	public CommandLineRunner loadPersistedLogs(
-			FileHandler fileHandler,
+			LogEntryRepository repository,
 			LogShieldServiceImpl service) {
 
 		return args -> {
-			List<LogEntryResponse> persisted = fileHandler.loadLogs();
+			long count = repository.count();
 
-			if (persisted.isEmpty()) {
+			if (count == 0) {
 				System.out.println(
 						"[LogShield] No persisted logs found. Starting fresh.");
 				return;
 			}
 
-			Map<String, LogEntryResponse> cache = service.getCache();
-			for (LogEntryResponse entry : persisted) {
-				cache.put(entry.getTimestamp(), entry);
-				service.getTrieService().trackPattern(entry.getMessage());
-			}
-
-			// Rewrite file to match HashMap state — removes duplicate timestamps
-			// that accumulated across multiple runs
-			fileHandler.rewriteAll(new ArrayList<>(cache.values()));
+			// Rebuild in-memory cache and Trie from DB on startup
+			repository.findAll().forEach(entity -> {
+				LogEntryResponse response = new LogEntryResponse(
+						entity.getId().toString(),
+						entity.getTimestamp(),
+						entity.getLevel(),
+						entity.getMessage(),
+						entity.getSeverityScore()
+				);
+				service.getCache().put(entity.getId().toString(), response);
+				service.getTrieService().trackPattern(entity.getMessage());
+			});
 
 			System.out.println("[LogShield] Restored "
-					+ cache.size()
-					+ " log entries from persistence file.");
+					+ count + " log entries from database.");
 		};
 	}
 }

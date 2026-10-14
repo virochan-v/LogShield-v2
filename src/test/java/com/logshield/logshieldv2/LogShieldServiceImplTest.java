@@ -1,5 +1,7 @@
 package com.logshield.logshieldv2;
 
+import com.logshield.logshieldv2.entity.LogEntryEntity;
+import com.logshield.logshieldv2.entity.LogEntryRepository;
 import com.logshield.logshieldv2.exception.InvalidLogLevelException;
 import com.logshield.logshieldv2.model.LogEntryRequest;
 import com.logshield.logshieldv2.model.LogEntryResponse;
@@ -8,9 +10,11 @@ import com.logshield.logshieldv2.service.LogShieldServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,9 +39,92 @@ class LogShieldServiceImplTest {
      */
     @BeforeEach
     void setUp() {
+        // In-memory list simulating DB state
+        java.util.List<LogEntryEntity> dbState = new java.util.ArrayList<>();
+
+        LogEntryRepository mockRepository =
+                Mockito.mock(LogEntryRepository.class);
+
+        // save() — add to dbState, set UUID, return entity
+        Mockito.when(mockRepository.save(Mockito.any(LogEntryEntity.class)))
+                .thenAnswer(invocation -> {
+                    LogEntryEntity entity = invocation.getArgument(0);
+                    try {
+                        java.lang.reflect.Field idField =
+                                LogEntryEntity.class.getDeclaredField("id");
+                        idField.setAccessible(true);
+                        // Only set UUID if not already set
+                        if (idField.get(entity) == null) {
+                            idField.set(entity, UUID.randomUUID());
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                    // Remove existing entry with same timestamp (simulates overwrite)
+                    dbState.removeIf(e ->
+                            e.getTimestamp().equals(entity.getTimestamp()));
+                    dbState.add(entity);
+                    return entity;
+                });
+
+        // findAll() — return current dbState
+        Mockito.when(mockRepository.findAll())
+                .thenAnswer(inv -> new java.util.ArrayList<>(dbState));
+
+        // count() — return dbState size
+        Mockito.when(mockRepository.count())
+                .thenAnswer(inv -> (long) dbState.size());
+
+        // countByLevel() — count matching entries in dbState
+        Mockito.when(mockRepository.countByLevel(Mockito.anyString()))
+                .thenAnswer(inv -> {
+                    String level = inv.getArgument(0);
+                    return dbState.stream()
+                            .filter(e -> e.getLevel().equals(level))
+                            .count();
+                });
+
+        // existsById() — check dbState
+        Mockito.when(mockRepository.existsById(Mockito.any(UUID.class)))
+                .thenAnswer(inv -> {
+                    UUID id = inv.getArgument(0);
+                    return dbState.stream()
+                            .anyMatch(e -> id.equals(e.getId()));
+                });
+
+        // deleteById() — remove from dbState
+        Mockito.doAnswer(inv -> {
+            UUID id = inv.getArgument(0);
+            dbState.removeIf(e -> id.equals(e.getId()));
+            return null;
+        }).when(mockRepository).deleteById(Mockito.any(UUID.class));
+
+        // deleteAll() — clear dbState
+        Mockito.doAnswer(inv -> {
+            dbState.clear();
+            return null;
+        }).when(mockRepository).deleteAll();
+
+        // findBySeverityScore() — filter dbState
+        Mockito.when(mockRepository.findBySeverityScore(Mockito.anyInt()))
+                .thenAnswer(inv -> {
+                    int score = inv.getArgument(0);
+                    return dbState.stream()
+                            .filter(e -> e.getSeverityScore() == score)
+                            .collect(java.util.stream.Collectors.toList());
+                });
+
+        // findAllByOrderBySeverityScoreAsc() — sort dbState
+        Mockito.when(mockRepository.findAllByOrderBySeverityScoreAsc())
+                .thenAnswer(inv -> dbState.stream()
+                        .sorted(java.util.Comparator.comparingInt(
+                                LogEntryEntity::getSeverityScore))
+                        .collect(java.util.stream.Collectors.toList()));
+
         service = new LogShieldServiceImpl(
                 new com.logshield.logshieldv2.trie.TrieService(),
-                new com.logshield.logshieldv2.storage.FileHandler());
+                new com.logshield.logshieldv2.storage.FileHandler(),
+                mockRepository);
     }
 
     // ── Helper method ─────────────────────────────────────────────────────
@@ -256,10 +343,10 @@ class LogShieldServiceImplTest {
 
         Map<String, Object> stats = service.getStatistics();
 
-        assertEquals(4,   stats.get("total"));
-        assertEquals(2,   stats.get("infoCount"));
-        assertEquals(1,   stats.get("warnCount"));
-        assertEquals(1,   stats.get("errorCount"));
+        assertEquals(4L,  stats.get("total"));
+        assertEquals(2L,  stats.get("infoCount"));
+        assertEquals(1L,  stats.get("warnCount"));
+        assertEquals(1L,  stats.get("errorCount"));
     }
 
     @Test
