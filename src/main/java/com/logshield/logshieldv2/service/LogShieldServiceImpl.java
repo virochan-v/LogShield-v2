@@ -86,14 +86,6 @@ public class LogShieldServiceImpl implements ILogShieldService {
         return score;
     }
 
-    /**
-     * Converts a LogEntryResponse to a sortable array element.
-     * Used internally by sort and search operations.
-     */
-    private LogEntryResponse[] getCacheAsArray() {
-        return logCache.values().toArray(new LogEntryResponse[0]);
-    }
-
     // ── CRUD Operations ───────────────────────────────────────────────────
 
     /**
@@ -134,7 +126,8 @@ public class LogShieldServiceImpl implements ILogShieldService {
         // Track pattern in Trie — O(L)
         trieService.trackPattern(saved.getMessage());
 
-        // Keep in-memory cache in sync for algorithm operations
+        // Cache kept in sync for startup restoration only
+        // Algorithm operations now read directly from DB via loadFromDb()
         logCache.put(saved.getId().toString(), toResponse(saved));
 
         return toResponse(saved);
@@ -184,7 +177,8 @@ public class LogShieldServiceImpl implements ILogShieldService {
         if (size <= 0) size = 20;
         if (size > 100) size = 100; // cap at 100 — prevent abuse
 
-        List<LogEntryResponse> all = new ArrayList<>(logCache.values());
+        List<LogEntryResponse> all = new ArrayList<>(
+                Arrays.asList(loadFromDb()));
         long totalElements = all.size();
 
         // Calculate start and end index for this page
@@ -205,7 +199,7 @@ public class LogShieldServiceImpl implements ILogShieldService {
 
     @Override
     public List<LogEntryResponse> getSortedLogs() {
-        LogEntryResponse[] arr = getCacheAsArray();
+        LogEntryResponse[] arr = loadFromDb();
         cycleSort(arr);
         return Arrays.asList(arr);
     }
@@ -224,12 +218,9 @@ public class LogShieldServiceImpl implements ILogShieldService {
      */
     @Override
     public List<LogEntryResponse> getSortedLogsFast() {
-        List<LogEntryResponse> all = new ArrayList<>(logCache.values());
-
-        // Collections.sort() uses TimSort — O(n log n) stable sort
-        // Stable = entries with equal severity maintain insertion order
+        List<LogEntryResponse> all = new ArrayList<>(
+                Arrays.asList(loadFromDb()));
         all.sort(Comparator.comparingInt(LogEntryResponse::getSeverityScore));
-
         return all;
     }
 
@@ -242,7 +233,7 @@ public class LogShieldServiceImpl implements ILogShieldService {
      */
     @Override
     public List<LogEntryResponse> searchBySeverity(int score) {
-        LogEntryResponse[] arr = getCacheAsArray();
+        LogEntryResponse[] arr = loadFromDb();
         cycleSort(arr);
         return searchAllBySeverity(arr, score);
     }
@@ -262,7 +253,7 @@ public class LogShieldServiceImpl implements ILogShieldService {
                 Comparator.comparingInt(LogEntryResponse::getSeverityScore)
         );
 
-        for (LogEntryResponse entry : logCache.values()) {
+        for (LogEntryResponse entry : loadFromDb()) {
             if (minHeap.size() < k) {
                 minHeap.add(entry);
             } else if (entry.getSeverityScore()
@@ -354,7 +345,7 @@ public class LogShieldServiceImpl implements ILogShieldService {
     public List<String> getAnomalySummary(
             int windowSize, int errorThreshold) {
 
-        LogEntryResponse[] arr = getCacheAsArray();
+        LogEntryResponse[] arr = loadFromDb();
         if (arr.length < windowSize) return new ArrayList<>();
 
         // Sort by timestamp for meaningful time-based windows
@@ -445,6 +436,26 @@ public class LogShieldServiceImpl implements ILogShieldService {
                 entity.getMessage(),
                 entity.getSeverityScore()
         );
+    }
+
+    /**
+     * Loads all log entries from DB as an array for algorithm operations.
+     *
+     * Always reads from DB — single source of truth.
+     * Eliminates cache-DB consistency risk.
+     *
+     * Trade-off: DB hit on every algorithm operation.
+     * Acceptable at LogShield's scale — production systems
+     * would add a read-through cache with TTL eviction.
+     *
+     * Time Complexity: O(n) — full table scan
+     * Space Complexity: O(n) — all entries loaded into array
+     */
+    private LogEntryResponse[] loadFromDb() {
+        return repository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .toArray(LogEntryResponse[]::new);
     }
 
     // ── Algorithm implementations ─────────────────────────────────────────
